@@ -18,12 +18,33 @@ from router.payment import payment_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting Application")
-    task = asyncio.create_task(consume_payment_messages(
+
+    # Create the consumer task
+    consumer_task = asyncio.create_task(consume_payment_messages(
         setting.KAFKA_PAYMENT_TOPIC, 'broker:19092'))
-    print("Kafka consumer started")
+    print("Kafka consumer task created")
+
+    # Create database and tables
     create_db_and_tables()
     print("Database and tables created")
-    yield
+
+    try:
+        # Ensure the consumer has started
+        await asyncio.sleep(0)  # Yield control to allow the task to start
+        yield  # Now the application can start accepting requests
+
+    finally:
+        # Gracefully shutdown the consumer task
+        print("Shutting down consumer task")
+        consumer_task.cancel()
+
+        try:
+            await consumer_task
+        except asyncio.CancelledError:
+            print("Consumer task was cancelled")
+
+        print("Application shutdown complete")
+
 
 app: FastAPI = FastAPI(
     lifespan=lifespan,

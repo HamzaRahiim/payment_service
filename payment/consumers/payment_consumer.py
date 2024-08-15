@@ -3,6 +3,11 @@ from aiokafka import AIOKafkaConsumer
 from payment.crud.payment_crud import add_new_payment
 from payment.db import get_session
 from payment.model import Payment
+import logging
+
+# ... (rest of your imports)
+
+logger = logging.getLogger(__name__)  # Configure logging appropriately
 
 
 async def consume_payment_messages(topic, bootstrap_servers):
@@ -27,8 +32,10 @@ async def consume_payment_messages(topic, bootstrap_servers):
             with next(get_session()) as session:
                 print("SAVING DATA TO DATABSE")
                 db_insert_payment = add_new_payment(
-                    product_data=Payment(**payment_data), session=session)
+                    payment_data=Payment(**payment_data), session=session)
                 print("DB_INSERT_PAYMENT", db_insert_payment)
+    except Exception as e:
+        logger.error(f"Error processing message in Consumer: {e}")
     finally:
         # Ensure to close the consumer when done.
         await consumer.stop()

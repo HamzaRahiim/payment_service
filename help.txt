@@ -7,4 +7,5 @@
 7. In Consumer File, we need a function that add the extracted data from consumer in database so ..
     we create new directory crud where I create the function.
 8. Initiate the conumer function in LifeSpan function
- 
+9. for fixing the kafka consumer error, I just updated the lifespan function..
+10. data in database was not showing was very simple error, wrong argmuent name.

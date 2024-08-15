@@ -19,6 +19,7 @@ class PaymentBase(SQLModel):
     payment_id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default=datetime.now(), nullable=False)
     # Add a custom JSON encoder for datetime fields
+
     class Config:
         json_encoders = {
             datetime: lambda dt: dt.isoformat()  # Convert datetime to ISO format string
@@ -61,3 +62,7 @@ class PaymentCreate(SQLModel):
 class PaymentResponse (PaymentBase, SQLModel):
     total_price: float
     status: PaymentStatus
+
+
+class PaymentKafkaResponse (SQLModel):
+    payment_id: int

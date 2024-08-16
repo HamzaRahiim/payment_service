@@ -1,9 +1,7 @@
 import asyncio
 from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import SQLModel, Field, create_engine, select, Session
 from typing import Optional, Annotated
-
 
 from datetime import timedelta
 from contextlib import asynccontextmanager
@@ -19,7 +17,7 @@ from router.payment import payment_router
 async def lifespan(app: FastAPI):
     print("Starting Application")
 
-    # Create the consumer task
+    # Create the consumer tasks
     consumer_task = asyncio.create_task(consume_payment_messages(
         setting.KAFKA_PAYMENT_TOPIC, 'broker:19092'))
     consume_read_payment = asyncio.create_task(consume_read_payment_messages(
@@ -32,20 +30,17 @@ async def lifespan(app: FastAPI):
 
     try:
         # Ensure the consumer has started
-        await asyncio.sleep(0)  # Yield control to allow the task to start
-        yield  # Now the application can start accepting requests
+        await asyncio.sleep(0)
+        yield
 
     finally:
-        # Gracefully shutdown the consumer task
+        # Gracefully shutdown the consumer tasks
         print("Shutting down consumer task")
         consumer_task.cancel()
         consume_read_payment.cancel()
 
-        try:
-            await consumer_task
-            await consume_read_payment
-        except asyncio.CancelledError:
-            print("Consumer task was cancelled")
+        # Wait for the tasks to complete before exiting
+        await asyncio.gather(consumer_task, consume_read_payment, return_exceptions=True)
 
         print("Application shutdown complete")
 

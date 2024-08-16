@@ -1,10 +1,6 @@
-
-
-# Add a New Product to the Database
 from sqlmodel import Session
-
+from datetime import datetime
 from payment.model import Payment
-
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,6 +9,9 @@ logger = logging.getLogger(__name__)
 def add_new_payment(payment_data: Payment, session: Session):
     try:
         print("Adding payment to Database")  # Keep this for now
+        # Convert the Unix timestamp to a datetime object
+        payment_data.created_at = datetime.fromtimestamp(
+            payment_data.created_at)
         session.add(payment_data)
         session.commit()
         session.refresh(payment_data)
@@ -25,7 +24,8 @@ def add_new_payment(payment_data: Payment, session: Session):
 
 def get_payment_by_id(payment_id: int, session: Session):
     try:
-        print(f"Fetching payment with ID {payment_id} from Database")  # Keep this for now
+        print(f"Fetching payment with ID {
+              payment_id} from Database")  # Keep this for now
         payment = session.get(Payment, payment_id)
         if not payment:
             logger.error(f"Payment with ID {payment_id} not found")

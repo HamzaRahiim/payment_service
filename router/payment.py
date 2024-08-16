@@ -3,7 +3,7 @@ from typing import List, Annotated
 from aiokafka import AIOKafkaProducer
 from fastapi import FastAPI, APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
-from payment import setting
+from payment import payment_pb2, setting
 from payment.crud.payment_crud import get_payment_by_id
 from payment.db import get_kafka_producer, get_session
 from payment.model import Payment, PaymentCreate, PaymentKafkaResponse, PaymentResponse, PaymentStatus
@@ -22,14 +22,20 @@ async def root():
 
 @payment_router.post("/pay-now/", response_model=PaymentResponse)
 async def create_payment(payment: PaymentCreate, producer: Annotated[AIOKafkaProducer, Depends(get_kafka_producer)]):
-    # payment_dict = {field: getattr(payment, field) for field in payment.dict()}
-    payment_json = payment.json()  # This will use the custom json_encoders you defined
-    await producer.send_and_wait(setting.KAFKA_PAYMENT_TOPIC, payment_json.encode("utf-8"))
-    # comment this line as we no longer sending data directly to database
-    # session.add(db_payment)
-    # session.commit()
-    # session.refresh(db_payment)
+    payment_protbuf = payment_pb2.PaymentCreate(
+        created_at=int(datetime.datetime.now().timestamp()),
+        card_num=payment.card_num,
+        cvv=payment.cvv,
+        valid_thru_month=payment.valid_thru_month,
+        valid_thru_year=payment.valid_thru_year,
+        total_price=payment.total_price,
+        status=payment_pb2.PaymentStatus.PENDING
+    )
+    serialized_payment = payment_protbuf.SerializeToString()
+    print(f"Serialized data: {serialized_payment}")
+    await producer.send_and_wait(setting.KAFKA_PAYMENT_TOPIC, serialized_payment)
     return payment
+
 
 # # Returns all placed payments
 

@@ -1,0 +1,22 @@
+// from watching video
+
+1. Update the docker file: with protobuf-compiler 
+2. poetry add protobuf
+3. Install vscode-proto3 extension
+4. make todo.proto file -> version, schema 
+5. inside container protoc --version.
+
+
+// Now doing step-wise:
+1. let's update the docker file.
+2. poetry add protobuf.
+3. write proto schema for payment.
+4. due to changes in docker file we need to rebuild this image and up service again.
+5. command to rebuild the payment service: docker compose up -d --build payment
+6. now go to container interactive mode through dev-container or command: docker exec -it contName /bin/bash
+7. check version protoc --version.
+8. go to the directory of proto file.
+9. run this commmand : protoc --python_out=. fileName.proto
+10. now check the new python file in vscode with fileName.proto
+11. add protobuf in postapi and test..
+12. then add in consumer to decode.. and then add to db.

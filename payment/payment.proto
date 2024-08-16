@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+enum PaymentStatus {
+    PENDING = 0;
+    SUCCESS = 1;
+    FAILED = 2;
+    DECLINE = 3;
+    COD = 4;
+}
+
+message PaymentCreate {
+    int64 created_at = 1;
+    int64 card_num = 2;
+    int32 cvv = 3;
+    int32 valid_thru_month = 4;
+    int32 valid_thru_year = 5;
+    float total_price = 6;
+    PaymentStatus status = 7;
+}

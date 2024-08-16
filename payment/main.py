@@ -9,7 +9,7 @@ from datetime import timedelta
 from contextlib import asynccontextmanager
 
 from payment import setting
-from payment.consumers.payment_consumer import consume_payment_messages
+from payment.consumers.payment_consumer import consume_payment_messages, consume_read_payment_messages
 from payment.db import create_db_and_tables, engine, get_session
 
 from router.payment import payment_router
@@ -22,6 +22,8 @@ async def lifespan(app: FastAPI):
     # Create the consumer task
     consumer_task = asyncio.create_task(consume_payment_messages(
         setting.KAFKA_PAYMENT_TOPIC, 'broker:19092'))
+    consume_read_payment = asyncio.create_task(consume_read_payment_messages(
+        setting.KAFKA_PAYMENT_ID_TOPIC, 'broker:19092'))
     print("Kafka consumer task created")
 
     # Create database and tables
@@ -37,9 +39,11 @@ async def lifespan(app: FastAPI):
         # Gracefully shutdown the consumer task
         print("Shutting down consumer task")
         consumer_task.cancel()
+        consume_read_payment.cancel()
 
         try:
             await consumer_task
+            await consume_read_payment
         except asyncio.CancelledError:
             print("Consumer task was cancelled")
 

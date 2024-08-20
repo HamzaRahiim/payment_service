@@ -6,7 +6,7 @@ from typing import Optional, Annotated
 from datetime import timedelta
 from contextlib import asynccontextmanager
 
-from payment import setting
+from payment import payment_pb2, setting
 from payment.consumers.payment_consumer import consume_payment_messages, consume_read_payment_messages
 from payment.db import create_db_and_tables, engine, get_session
 
@@ -17,16 +17,16 @@ from router.payment import payment_router
 async def lifespan(app: FastAPI):
     print("Starting Application")
 
+    # Create database and tables
+    create_db_and_tables()
+    print("Database and tables created")
+
     # Create the consumer tasks
     consumer_task = asyncio.create_task(consume_payment_messages(
         setting.KAFKA_PAYMENT_TOPIC, 'broker:19092'))
     consume_read_payment = asyncio.create_task(consume_read_payment_messages(
         setting.KAFKA_PAYMENT_ID_TOPIC, 'broker:19092'))
     print("Kafka consumer task created")
-
-    # Create database and tables
-    create_db_and_tables()
-    print("Database and tables created")
 
     try:
         # Ensure the consumer has started
@@ -43,7 +43,6 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(consumer_task, consume_read_payment, return_exceptions=True)
 
         print("Application shutdown complete")
-
 
 app: FastAPI = FastAPI(
     lifespan=lifespan,

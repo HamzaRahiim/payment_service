@@ -1,33 +1,34 @@
 import json
+import logging
 from aiokafka import AIOKafkaConsumer
 from payment import payment_pb2
+from payment.kafka.schema_registry import protobuf_deserializer
 from payment.crud.payment_crud import add_new_payment, get_payment_by_id
 from payment.db import get_session
-from payment.model import Payment
-import logging
-
+from payment.model import Payment, PaymentStatus
+from confluent_kafka.serialization import SerializationContext, MessageField, StringDeserializer
+from payment import setting
 logger = logging.getLogger(__name__)  # Configure logging appropriately
+string_deserializer = StringDeserializer('utf8')
 
 
 async def consume_payment_messages(topic, bootstrap_servers):
-    # Create a consumer instance.
     consumer = AIOKafkaConsumer(
         topic,
         bootstrap_servers=bootstrap_servers,
         group_id="payment",
         auto_offset_reset="earliest",
+        key_deserializer=lambda v: string_deserializer(v),
+        value_deserializer=lambda v: protobuf_deserializer(
+            v, SerializationContext(setting.KAFKA_PAYMENT_TOPIC, MessageField.VALUE))
     )
 
-    # Start the consumer.
     await consumer.start()
     try:
-        # Continuously listen for messages.
         async for message in consumer:
             print(f"Received message on topic {message.topic}")
-            decoded_payment = message.value
-            payment_data = payment_pb2.PaymentCreate()
-            # Assuming 'serialized_payment' is your byte string
-            payment_data.ParseFromString(decoded_payment)
+            print(f"Message value: {message.value}")
+            payment_data = message.value
             status_name = payment_pb2.PaymentStatus.Name(payment_data.status)
             payment_dict = {
                 "created_at": payment_data.created_at,
@@ -36,9 +37,8 @@ async def consume_payment_messages(topic, bootstrap_servers):
                 "valid_thru_month": payment_data.valid_thru_month,
                 "valid_thru_year": payment_data.valid_thru_year,
                 "total_price": payment_data.total_price,
-                "status": status_name
+                "status": status_name,
             }
-            print("Decoded Payment proto", payment_dict)
 
             with next(get_session()) as session:
                 add_new_payment(
@@ -46,7 +46,6 @@ async def consume_payment_messages(topic, bootstrap_servers):
     except Exception as e:
         logger.error(f"Error processing message in Consumer: {e}")
     finally:
-        # Ensure to close the consumer when done.
         await consumer.stop()
 
 

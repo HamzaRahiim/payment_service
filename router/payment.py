@@ -3,10 +3,13 @@ from typing import List, Annotated
 from aiokafka import AIOKafkaProducer
 from fastapi import FastAPI, APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
-from payment import payment_pb2, setting
+from payment import setting
+from payment import payment_pb2
 from payment.crud.payment_crud import get_payment_by_id
 from payment.db import get_kafka_producer, get_session
 from payment.model import Payment, PaymentCreate, PaymentKafkaResponse, PaymentResponse, PaymentStatus
+# Import the generated Protobuf class
+from payment.payment_pb2 import PaymentCreate as PaymentCreateProto
 import json
 payment_router = APIRouter(
     prefix="/payment",
@@ -22,7 +25,12 @@ async def root():
 
 @payment_router.post("/pay-now/", response_model=PaymentResponse)
 async def create_payment(payment: PaymentCreate, producer: Annotated[AIOKafkaProducer, Depends(get_kafka_producer)]):
-    payment_protbuf = payment_pb2.PaymentCreate(
+
+    # Convert Pydantic model to Protobuf message
+    print(f"Producer object in create_payment: {producer}")
+ # Log the producer object for debugging
+    payment_proto = PaymentCreateProto(
+        # Assuming created_at is a datetime object
         created_at=int(datetime.datetime.now().timestamp()),
         card_num=payment.card_num,
         cvv=payment.cvv,
@@ -31,9 +39,16 @@ async def create_payment(payment: PaymentCreate, producer: Annotated[AIOKafkaPro
         total_price=payment.total_price,
         status=payment_pb2.PaymentStatus.PENDING
     )
-    serialized_payment = payment_protbuf.SerializeToString()
-    print(f"Serialized data: {serialized_payment}")
-    await producer.send_and_wait(setting.KAFKA_PAYMENT_TOPIC, serialized_payment)
+
+    try:
+        # Log the topic and serialized payment for debugging
+        print(f"Sending to topic: {setting.KAFKA_PAYMENT_TOPIC}")
+        print(f"Serialized payment: {payment_proto}")
+        await producer.send_and_wait(setting.KAFKA_PAYMENT_TOPIC, payment_proto)
+    except Exception as e:
+        print(f"Error while sending payment to Kafka: {e}")
+        raise HTTPException(
+            status_code=500, detail="Error while producing message to Kafka")
     return payment
 
 

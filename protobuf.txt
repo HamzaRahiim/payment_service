@@ -2,7 +2,7 @@
 
 1. Update the docker file: with protobuf-compiler 
 2. poetry add protobuf
-3. Install vscode-proto3 extension
+3. Install vscode-proto3 extension 
 4. make todo.proto file -> version, schema 
 5. inside container protoc --version.
 

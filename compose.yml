@@ -81,6 +81,7 @@ services:
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
     networks:
       - kafka-network
+
 volumes:
   kafka_db:
     name: kafka_db

@@ -1,0 +1,515 @@
+1. change .env file 
+
+DATABASE_URL="postgresql://aasifshahzad:123456@kafka_db-container:5432/payment_db"
+TEST_DATABASE_URL="postgresql://aasifshahzad:123456@kafka_db-container:5432/payment_db"
+# Kafka Bootstrap Server
+BOOTSTRAP_SERVER=broker:19092
+
+#TOPIC For Product
+KAFKA_PAYMENT_TOPIC=payment-events
+
+#TOPIC for payment retrival from payment_id
+KAFKA_PAYMENT_ID_TOPIC=payment-data-retrival-events
+
+#CONSIUMER GRPOUP for payment retrival from payment_id
+KAFKA_CONSUMER_GROUP_ID_FOR_PAYMENT="payment"
+
+#Used in schema_registry.py
+SCHEMA_REGISTRY_URL="http://schema-registry:8081"
+
+_____________________________________________________________________________
+2. Docker Compose File
+
+
+
+  broker:
+    image: apache/kafka:3.7.0
+    hostname: broker
+    container_name: broker
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT_HOST://localhost:9092,PLAINTEXT://broker:19092"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@broker:29093"
+      KAFKA_LISTENERS: "CONTROLLER://:29093,PLAINTEXT_HOST://:9092,PLAINTEXT://:19092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
+    networks:
+      - kafka-network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "Local Kafka Cluster"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "broker:19092"
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      - broker
+    networks:
+      - kafka-network
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:6.1.1
+    depends_on:
+      - broker
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: broker:19092
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    networks:
+      - kafka-network
+________________________________________________________________________________
+3. Dockerfile.dev
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+___________________________________________________________________________
+4.Poetry add
+poetry add confluent-kafka.
+poetry add aiokafka
+poetry add protobuf
+
+or change the pyproject.toml file
+_________________________________________________________________________________
+5.Update ReadME.md file also from ChatGPT
+
+____________________________________________________________________________
+6. Router --> service.py
+
+###Change Imports
+
+from payment import setting
+from payment import payment_pb2
+from payment.crud.payment_crud import get_payment_by_id
+from payment.db import get_kafka_producer, get_session
+from payment.model import Payment, PaymentCreate, PaymentKafkaResponse, PaymentResponse, PaymentStatus
+# Import the generated Protobuf class
+from payment.payment_pb2 import PaymentCreate as PaymentCreateProto
+import json
+
+###Change the post API function
+
+@payment_router.post("/pay-now/", response_model=PaymentResponse)
+async def create_payment(payment: PaymentCreate, producer: Annotated[AIOKafkaProducer, Depends(get_kafka_producer)]):
+
+    # Convert Pydantic model to Protobuf message
+    print(f"Producer object in create_payment: {producer}")
+ # Log the producer object for debugging
+    payment_proto = PaymentCreateProto(
+        # Assuming created_at is a datetime object
+        created_at=int(datetime.datetime.now().timestamp()),
+        card_num=payment.card_num,
+        cvv=payment.cvv,
+        valid_thru_month=payment.valid_thru_month,
+        valid_thru_year=payment.valid_thru_year,
+        total_price=payment.total_price,
+        status=payment_pb2.PaymentStatus.PENDING
+    )
+_______________________________________________________________________________
+7. setting.py
+
+from starlette.config import Config
+from starlette.datastructures import Secret
+
+try:
+    config = Config(".env")
+
+except FileNotFoundError:
+    print("No .env file found, using default environment variables")
+    config = Config()
+
+DATABASE_URL = config.get("DATABASE_URL", cast=Secret)
+TEST_DATABASE_URL = config.get("TEST_DATABASE_URL", cast=Secret)
+BOOTSTRAP_SERVER = config.get("BOOTSTRAP_SERVER", cast=str)
+KAFKA_PAYMENT_TOPIC = config.get("KAFKA_PAYMENT_TOPIC", cast=str)
+KAFKA_CONSUMER_GROUP_ID_FOR_PAYMENT = config.get(
+    "KAFKA_CONSUMER_GROUP_ID_FOR_PAYMENT", cast=str)
+KAFKA_PAYMENT_ID_TOPIC = config.get("KAFKA_PAYMENT_ID_TOPIC", cast=str)
+SCHEMA_REGISTRY_URL = config.get("SCHEMA_REGISTRY_URL", cast=str)
+
+    try:
+        # Log the topic and serialized payment for debugging
+        print(f"Sending to topic: {setting.KAFKA_PAYMENT_TOPIC}")
+        print(f"Serialized payment: {payment_proto}")
+        await producer.send_and_wait(setting.KAFKA_PAYMENT_TOPIC, payment_proto)
+    except Exception as e:
+        print(f"Error while sending payment to Kafka: {e}")
+        raise HTTPException(
+            status_code=500, detail="Error while producing message to Kafka")
+    return payment
+
+______________________________________________________________________________
+8. Add file service.proto( add all post api related classes should be added)
+
+syntax = "proto3";
+
+enum PaymentStatus {
+    PENDING = 0;
+    SUCCESS = 1;
+    FAILED = 2;
+    DECLINE = 3;
+    COD = 4;
+}
+
+message PaymentCreate {
+    int64 created_at = 1;
+    int64 card_num = 2;
+    int32 cvv = 3;
+    int32 valid_thru_month = 4;
+    int32 valid_thru_year = 5;
+    float total_price = 6;
+    PaymentStatus status = 7;
+}
+
+_________________________________________________________________________________
+9. Create service_pb2.py file by running command in terminal
+
+>>> protoc --python_out=. fileName/service_name.proto
+This command is run through dev container or run through Docker Interactive mode
+
+>>> docker exec -it contName /bin/bash
+
+Note: Move the terminal to service.proto file place before executing.....
+
+or execute by this command
+
+protoc -I=protos --python_out=services/user_service protos/user.proto
+
+___________________________________________________________________________________
+10. Change the Responsemodle in model.py if needed
+
+
+__________________________________________________________________________________
+11.change db.py by adding this info
+
+from payment.kafka.schema_registry import protobuf_serializer
+
+string_serializer = StringSerializer('utf8')
+
+
+async def get_kafka_producer():
+    try:
+        producer = AIOKafkaProducer(
+            bootstrap_servers='broker:19092',
+            key_serializer=string_serializer,
+            value_serializer=lambda v: protobuf_serializer(
+                v,
+                SerializationContext(
+                    "payment-events", MessageField.VALUE)
+            )
+        )
+        await producer.start()
+        print("Kafka producer connected successfully")
+        yield producer
+
+    except Exception as e:
+        print(f"Error connecting to Kafka: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to connect to Kafka")
+
+CONN_STRING: str = str(setting.DATABASE_URL)
+
+________________________________________________________________________________________
+12. change main.py by adding producer function
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Starting Application")
+
+    # Create database and tables
+    create_db_and_tables()
+    print("Database and tables created")
+
+    # Create the consumer tasks
+    consumer_task = asyncio.create_task(consume_payment_messages(
+        setting.KAFKA_PAYMENT_TOPIC, 'broker:19092'))
+    consume_read_payment = asyncio.create_task(consume_read_payment_messages(
+        setting.KAFKA_PAYMENT_ID_TOPIC, 'broker:19092'))
+    print("Kafka consumer task created")
+
+    try:
+        # Ensure the consumer has started
+        await asyncio.sleep(0)
+        yield
+
+    finally:
+        # Gracefully shutdown the consumer tasks
+        print("Shutting down consumer task")
+        consumer_task.cancel()
+        consume_read_payment.cancel()
+
+        # Wait for the tasks to complete before exiting
+        await asyncio.gather(consumer_task, consume_read_payment, return_exceptions=True)
+
+        print("Application shutdown complete")
+
+app: FastAPI = FastAPI(
+    lifespan=lifespan,
+    title="Payment Service App",
+    description="A simple Payment CRUD application",
+    version="1.0.0",
+)
+
+_______________________________________________________________________________________________________
+13.Project Structure
+
+payment_service
+
+
+compose.yaml
+
+files
+--requirements.txt
+--ReadME.md
+--pyproject.toml
+--poetry.lock
+--Dockerfile.dev
+--.gitignore
+--.env
+
+#Folders
+
+-payment
+--main.py
+--setting.py
+--db.py
+
+-schemas
+--payment.proto
+--payment_pb2.py
+--model.py
+--schema_registry.py
+
+-router
+--payment.py
+--kafa_curd_functions.py
+
+-consumer
+--consumer_functions.py
+
+-producer
+--producer_functions.py
+
+-tests
+--tests_payment.py
+
+
+__________________________________________________________________________________________________
+14. schema_registory.py
+
+from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry.protobuf import ProtobufSerializer, ProtobufDeserializer
+from payment import setting
+from payment.payment_pb2 import PaymentCreate
+
+# Schema Registry configuration
+schema_registry_conf = {'url': setting.SCHEMA_REGISTRY_URL}
+schema_registry_client = SchemaRegistryClient(schema_registry_conf)
+
+# Protobuf Serializer
+protobuf_serializer = ProtobufSerializer(
+    PaymentCreate, schema_registry_client, {'use.deprecated.format': False}
+)
+
+# Protobuf Deserializer
+protobuf_deserializer = ProtobufDeserializer(
+    PaymentCreate, {'use.deprecated.format': False}
+)
+____________________________________________________________________________________________________________
+
+15. kafa_curd_functions.py
+
+from sqlmodel import Session
+from datetime import datetime
+from payment.model import Payment
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def add_new_payment(payment_data: Payment, session: Session):
+    try:
+        print("Adding payment to Database")  # Keep this for now
+        # Convert the Unix timestamp to a datetime object
+        payment_data.created_at = datetime.fromtimestamp(
+            payment_data.created_at)
+        session.add(payment_data)
+        session.commit()
+        session.refresh(payment_data)
+        return True  # Indicate success
+    except Exception as e:
+        logger.error(f"Error adding payment to database: {e}")
+        session.rollback()  # Rollback the transaction in case of error
+        return False  # Indicate failure
+
+
+def get_payment_by_id(payment_id: int, session: Session):
+    try:
+        print(f"Fetching payment with ID {
+              payment_id} from Database")  # Keep this for now
+        payment = session.get(Payment, payment_id)
+        if not payment:
+            logger.error(f"Payment with ID {payment_id} not found")
+            return None  # Indicate failure (payment not found)
+        return payment  # Indicate success (payment found)
+    except Exception as e:
+        logger.error(f"Error fetching payment with ID {payment_id}: {e}")
+        return None  # Indicate failure (error occurred)
+_____________________________________________________________________________________________________
+
+16. consumer.py
+
+import json
+import logging
+from aiokafka import AIOKafkaConsumer
+from payment import payment_pb2
+from payment.kafka.schema_registry import protobuf_deserializer
+from payment.crud.payment_crud import add_new_payment, get_payment_by_id
+from payment.db import get_session
+from payment.model import Payment, PaymentStatus
+from confluent_kafka.serialization import SerializationContext, MessageField, StringDeserializer
+from payment import setting
+logger = logging.getLogger(__name__)  # Configure logging appropriately
+string_deserializer = StringDeserializer('utf8')
+
+
+async def consume_payment_messages(topic, bootstrap_servers):
+    consumer = AIOKafkaConsumer(
+        topic,
+        bootstrap_servers=bootstrap_servers,
+        group_id="payment",
+        auto_offset_reset="earliest",
+        key_deserializer=lambda v: string_deserializer(v),
+        value_deserializer=lambda v: protobuf_deserializer(
+            v, SerializationContext(setting.KAFKA_PAYMENT_TOPIC, MessageField.VALUE))
+    )
+
+    await consumer.start()
+    try:
+        async for message in consumer:
+            print(f"Received message on topic {message.topic}")
+            print(f"Message value: {message.value}")
+            payment_data = message.value
+            status_name = payment_pb2.PaymentStatus.Name(payment_data.status)
+            payment_dict = {
+                "created_at": payment_data.created_at,
+                "card_num": payment_data.card_num,
+                "cvv": payment_data.cvv,
+                "valid_thru_month": payment_data.valid_thru_month,
+                "valid_thru_year": payment_data.valid_thru_year,
+                "total_price": payment_data.total_price,
+                "status": status_name,
+            }
+
+            with next(get_session()) as session:
+                add_new_payment(
+                    payment_data=Payment(**payment_dict), session=session)
+    except Exception as e:
+        logger.error(f"Error processing message in Consumer: {e}")
+    finally:
+        await consumer.stop()
+
+
+async def consume_read_payment_messages(topic, bootstrap_servers):
+    # Create a consumer instance.
+    consumer = AIOKafkaConsumer(
+        topic,
+        bootstrap_servers=bootstrap_servers,
+        group_id="payment_read",
+        auto_offset_reset="earliest",
+    )
+
+    # Start the consumer.
+    await consumer.start()
+    try:
+        # Continuously listen for messages.
+        async for message in consumer:
+            print(f"Received message on topic {message.topic}")
+            message_data = json.loads(message.value.decode())
+            payment_id = message_data.get("payment_id")
+            # print(f"Received payment ID: {payment_id}")
+
+            if payment_id is None:
+                logger.error("Payment ID is missing in the message")
+                continue
+
+            with next(get_session()) as session:
+                print(f"Fetching payment with ID {
+                      payment_id} from the database")
+                payment = get_payment_by_id(
+                    payment_id=payment_id, session=session)
+
+                if payment:
+                    print(f"Payment found: {payment}")
+                else:
+                    print(f"Payment with ID {payment_id} not found")
+
+    except Exception as e:
+        logger.error(f"Error processing message in Consumer: {e}")
+    finally:
+        # Ensure to close the consumer when done.
+        await consumer.stop()
+_____________________________________________________________________________________________________
+17. producer.py
+
+import asyncio
+
+from fastapi import HTTPException
+from payment import setting
+from sqlmodel import SQLModel, create_engine, Session
+from aiokafka import AIOKafkaProducer
+from payment.kafka.schema_registry import protobuf_serializer
+from confluent_kafka.serialization import SerializationContext, MessageField, StringSerializer
+# Kafka Producer as a dependency
+
+from aiokafka import AIOKafkaProducer
+from fastapi import HTTPException
+from payment.kafka.schema_registry import protobuf_serializer
+
+string_serializer = StringSerializer('utf8')
+
+
+async def get_kafka_producer():
+    try:
+        producer = AIOKafkaProducer(
+            bootstrap_servers='broker:19092',
+            key_serializer=string_serializer,
+            value_serializer=lambda v: protobuf_serializer(
+                v,
+                SerializationContext(
+                    "payment-events", MessageField.VALUE)
+            )
+        )
+        await producer.start()
+        print("Kafka producer connected successfully")
+        yield producer
+
+    except Exception as e:
+        print(f"Error connecting to Kafka: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to connect to Kafka")
+
+
+
+
+
+
+

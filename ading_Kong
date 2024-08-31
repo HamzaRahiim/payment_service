@@ -1,0 +1,16 @@
+1. Just Update the compose file with kong configuration, and copy that from their official github site.
+2. Create POSTGRES_PASSWORD file and the password like "kong"
+3. update docker file with cmd "CMD ["poetry", "run", "uvicorn", "payment.main:app", "--host", "0.0.0.0", "--port", "8081", "--reload"]"
+4. command include docker compose --profile database up -d payment --build
+5. Error fixing helpful cmd :
+   Ensure all Migrations are Applied: Run kong migrations up followed by kong migrations finish multiple times in succession:
+
+   - docker-compose run kong kong migrations up
+   - docker-compose run kong kong migrations finish
+
+   Repeat this cycle until no new migrations are available.
+
+6. Add this option in the main file of app instance:
+
+   - root_path="/payment-service",
+   - root_path_in_servers=True

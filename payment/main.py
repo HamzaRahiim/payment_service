@@ -49,6 +49,8 @@ app: FastAPI = FastAPI(
     title="Payment Service App",
     description="A simple Payment CRUD application",
     version="1.0.0",
+    root_path="/payment-service",
+    root_path_in_servers=True
 )
 
 
@@ -58,3 +60,8 @@ app.include_router(router=payment_router)
 @app.get("/", tags=["Main"])
 async def root():
     return {"Message": "Payment App running :-}"}
+
+
+@app.get("/health", tags=["Main"])
+async def health():
+    return {"Message": "This is main Page:-)"}

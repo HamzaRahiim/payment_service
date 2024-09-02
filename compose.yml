@@ -7,7 +7,7 @@ x-kong-config: &kong-env
   KONG_PG_PASSWORD_FILE: /run/secrets/kong_postgres_password
 
 services:
-  payment:
+  kafka_payment:
     build:
       context: ./
       dockerfile: Dockerfile.dev
@@ -19,10 +19,10 @@ services:
     networks:
       - kafka-network
     depends_on:
-      - payment_db
-      - broker
+      - kafka_payment_db
+      - kafka_broker
 
-  payment_db:
+  kafka_payment_db:
     image: postgres:latest # Use the official PostgreSQL image
     restart: always
     container_name: kafka_db-container
@@ -49,10 +49,10 @@ services:
     networks:
       - kafka-network
 
-  broker:
+  kafka_broker:
     image: apache/kafka:3.7.0
     hostname: broker
-    container_name: broker
+    container_name: kafka_broker
     ports:
       - "9092:9092"
     environment:
@@ -73,9 +73,9 @@ services:
     networks:
       - kafka-network
 
-  kafka-ui:
+  payment_kafka-ui:
     image: provectuslabs/kafka-ui
-    container_name: kafka-ui
+    container_name: payment-kafka-ui
     ports:
       - "8080:8080"
     environment:
@@ -83,14 +83,14 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "broker:19092"
       DYNAMIC_CONFIG_ENABLED: "true"
     depends_on:
-      - broker
+      - kafka_broker
     networks:
       - kafka-network
 
-  schema-registry:
+  kafka-schema-registry:
     image: confluentinc/cp-schema-registry:6.1.1
     depends_on:
-      - broker
+      - kafka_broker
     ports:
       - "8081:8081"
     environment:

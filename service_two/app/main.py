@@ -13,17 +13,6 @@ app: FastAPI = FastAPI(
     version="1.0.0",
     root_path="/todo-service",
     root_path_in_servers=True,
-    servers=[
-        {
-            "url": "http://127.0.0.1:8090",
-            "description": "Development Server"
-        },
-        {
-            "url": "http://localhost:8090",
-            "description": "Dev Server"
-
-        }
-    ]
 )
 
 
